@@ -1,0 +1,464 @@
+/**
+ * START SCRIPT VARROCK WEST BANK WITH TINDERBOX IN INVENTORY.
+ * VERSION LOG:
+ * 0.10 SKELETON SCRIPT
+ * 0.20 STATES, METHODS, VARIABLES
+ * 0.30 SIMPLE PAINT ADDED
+ * 0.40 WALKING & BANKING
+ * 0.50 BURNING LOGS
+ * 0.60 LOOPS COMPLETELY (BUGGED/BOTLIKE/POOR EFFICIENCY)
+ * 0.70 LEVEL PROGRESSOR, TTL, FAIR EFFICIENCY WHEN RUNNING/NOT GETTING STUCK
+ * 0.71 PRE-RELEASE
+ * 0.80 BUGS
+ * 0.85 BUGS
+ * 0.90 FINAL PAINT, DELETED UNNEEDED CODE
+ * 1.00 RELEASED.
+ * 
+ * BUGS:
+ * #1. Stuck on FIRE
+ * #2. Gets stuck in DeathA3 after makings Lines of fire (inventory: empty, tile: 3171,3430 3171,3429)
+ * #3. Gets stuck outside of Bank 1, doesnt click into bank or bank (is it fixed?)
+ * #4. Runs back to FireA/Clicking when its already started making fires. (not usually)
+ * #5. Runs back to FireA/Clicking from bank when it hasnt completed banking (inventory: ISNT FULL)
+ * #6. Enables run in the middle of "Task" when code is used once when "banking"
+ * #7. Mouse Spazing out trying to click map & enable run.
+ * #8. Bot like behavour, standing for "to long", Clicks a bank door instead of banker? (Jagex way of detecting botting?)
+ *
+ * NEED TO DO:
+ * #1. add withdraw tinderbox if tinderbox isnt in inventory.
+ * #2. get stuck on fire fix + bugs 2-8.
+ * #3. pick up or burn from the ground the missed log.
+ * #4. recode? (is this the best way to code firemaking?)
+ */
+
+import java.awt.Color;
+import java.awt.Graphics;
+import java.awt.image.BufferedImage;
+import java.io.File;
+
+import javax.imageio.ImageIO;
+
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.map.Area;
+import org.dreambot.api.methods.map.Tile;
+import org.dreambot.api.methods.skills.Skill;
+import org.dreambot.api.methods.tabs.Tab;
+import org.dreambot.api.script.AbstractScript;
+import org.dreambot.api.script.Category;
+import org.dreambot.api.script.ScriptManifest;
+import org.dreambot.api.script.listener.MessageListener;
+import org.dreambot.api.script.listener.PaintListener;
+import org.dreambot.api.utilities.Timer;
+import org.dreambot.api.wrappers.interactive.GameObject;
+import org.dreambot.api.wrappers.interactive.NPC;
+import org.dreambot.api.wrappers.items.GroundItem;
+import org.dreambot.api.wrappers.items.Item;
+import org.dreambot.api.wrappers.widgets.message.Message;
+
+@ScriptManifest(author = "DontGetBanned", category = Category.FIREMAKING, name = "EverFire", version = 0.7)
+public class EverFire  extends AbstractScript implements PaintListener, MessageListener{
+
+	//Paint Support
+	private String Name = "EverFire";
+	private final String Version = "0.7";
+	public String Status;	
+	private Timer timer;
+	private int Hopped;		private int StartXP;
+	private int StartLevel; private int CurrentXP;
+	private int Burned;		private int CurrentLevel;
+	private int XPGained;	private int Levels;
+	private String eFire;
+	
+	//Area & Tiles (Varrock West Bank)
+	private final Area FireA = new Area(3196,3432,3201,3428);
+//	private final Area FireA1 = new Area(3194,3432,3201,3432);
+//	private final Area FireA2 = new Area(3194,3431,3201,3431);
+//	private final Area FireA3 = new Area(3194,3430,3201,3430);
+//	private final Area FireA4 = new Area(3194,3429,3201,3429);
+//	private final Area FireA5 = new Area(3194,3428,3201,3428);
+	
+	private final Area Clicking = new Area(3199,3433,3200,3427);
+	private final Area DeathA1 = new Area(3191,3434,3200,3433);
+	private final Area DeathA2 = new Area(3191,3427,3200,3427);
+	private final Area DeathA3 = new Area(3161,3440,3171,3419);
+	private final Area DeathA4 = new Area(3177,3441,3180,3433);
+
+	private final Tile Lane1 = new Tile(3199,3432);
+	private final Tile Lane2 = new Tile(3199,3431);
+	private final Tile Lane3 = new Tile(3199,3430);
+	private final Tile Lane4 = new Tile(3199,3429);
+	private final Tile Lane5 = new Tile(3199,3428);
+	private final Tile Outside = new Tile(3180,3432);
+	private final Area BankA = new Area(3180,3439,3185,3433); 
+	private final Tile Bank1 = new Tile(3185,3436);
+	
+	private final Area FireLane1 = new Area(3169,3432,3201,3432);
+	private final Area FireLane2 = new Area(3169,3431,3201,3431);
+	private final Area FireLane3 = new Area(3169,3430,3201,3430);
+	private final Area FireLane4 = new Area(3169,3429,3201,3429);
+	private final Area FireLane5 = new Area(3169,3428,3201,3428);
+	
+	//Script & Methods Support
+	private enum State {WALK, BANK, COLLECT, LIGHT, LANE1, LANE2, LANE3, LANE4, LANE5};
+	public String Wood[] = {"Oak logs", "Willow logs", "Maple logs", "Willow logs", "Logs", "Yew logs"};
+	private int runEnergy = Calculations.random(15, 49);
+	private final int[] f2pWorlds = new int[]{500,501,502,503,504};
+	private boolean hopWorlds = false;
+
+	//On Start
+	@Override
+	public void onStart() {
+		log(Name + "has initiated");
+		sleep(200);
+		StartXP = getSkills().getExperience(Skill.FIREMAKING);
+		StartLevel = getSkills().getRealLevel(Skill.FIREMAKING);
+		CurrentXP = getSkills().getExperience(Skill.FIREMAKING);
+		CurrentLevel = getSkills().getRealLevel(Skill.FIREMAKING);
+		timer = new Timer();
+		Burned = 0;
+		XPGained = 0;
+		Hopped = 0;
+		Levels = 0;
+		sleep(400);
+		eFire = "";
+		Progressor();
+		log("onStart Complete");
+	}
+	
+	//On Finish
+	public void onStop() {
+		log("Stopping script, taking screenshot");
+		ScreenShot();
+		log("Thanks for using Script " + Name);
+	}
+
+	//Methods
+	private State getState() {
+		GameObject Fire = getGameObjects().closest("Fire");
+		NPC banker = getNpcs().closest(npc -> npc != null && npc.hasAction("Bank"));
+		if (!BankA.contains(getLocalPlayer()) && !getInventory().contains(eFire) && banker.isOnScreen()) {
+			return State.BANK;
+		} else
+		if (DeathA3.contains(getLocalPlayer()) && getInventory().contains(eFire)) {
+			getWalking().clickTileOnMinimap(Outside);	
+			getWalking().walk(Bank1.getTile().getRandomizedTile(2));
+			sleepUntil(() -> Bank1.distance(getLocalPlayer()) >20, (Calculations.random(4000,8000)));
+			sleep(3000);
+		} else
+		if (DeathA1.contains(getLocalPlayer())) {
+			getWalking().walkOnScreen(Lane5.getRandomizedTile(2));
+			sleepUntil(() -> Lane5.getTile().distance(getLocalPlayer()) >10, (Calculations.random(3000,6500)));
+		} else
+		if (DeathA2.contains(getLocalPlayer())) {
+			getWalking().walkOnScreen(Lane1.getRandomizedTile(2));
+			sleepUntil(() -> Lane1.getTile().distance(getLocalPlayer()) >10, (Calculations.random(3000,6500)));
+		} else 
+		if (DeathA4.contains(getLocalPlayer())) {
+			getWalking().walkOnScreen(Bank1);
+			sleepUntil(() -> Bank1.getTile().distance(getLocalPlayer()) >10, (Calculations.random(3000,6500)));
+		} else 
+//		if (getGroundItems().closest(eFire) != null) {
+	//		return State.COLLECT;
+		//} else 
+		if (getInventory().contains(eFire) && FireLane5.contains(getLocalPlayer())) {
+			return State.LANE5;
+		} else
+		if (getInventory().contains(eFire) && FireLane4.contains(getLocalPlayer())) {
+			return State.LANE4;
+		} else
+		if (getInventory().contains(eFire) && FireLane3.contains(getLocalPlayer())) {
+			return State.LANE3;
+		} else		
+		if (getInventory().contains(eFire) && FireLane2.contains(getLocalPlayer())) {
+			return State.LANE2;
+		} else
+		if (getInventory().contains(eFire) && FireLane1.contains(getLocalPlayer())) {
+			return State.LANE1;
+		} else
+		if (getInventory().isFull()) {
+			return State.WALK;
+		} else 
+		if (BankA.contains(getLocalPlayer()) && banker.isOnScreen()) {
+			return State.BANK;
+		} else 
+		if (!getInventory().contains(eFire)) {
+			return State.WALK;
+		}
+		return State.WALK;
+	}
+	
+	private void Run() {
+		Status = "Enabling Run";
+		if (!getWalking().isRunEnabled() && (getWalking().getRunEnergy() >= runEnergy)) {
+		    if (getWalking().toggleRun()) {
+	             sleepUntil(() -> getWalking().isRunEnabled(), Calculations.random(600, 1100));
+		    }
+		}
+	}
+	
+	public String Progressor() {
+		/**
+		 * Must have
+		 * Logs    1-15:  61+ extras
+		 * Oaks   15-30: 183+ extras
+		 * Willow:30-45: 535+ extras
+		 * Maple:   45+: 999+
+		 */
+		CurrentLevel = getSkills().getRealLevel(Skill.FIREMAKING);
+        if (getSkills().getRealLevel(Skill.FIREMAKING) < 15) {
+            return eFire = "Logs";
+        } else if (getSkills().getRealLevel(Skill.FIREMAKING) < 30) {
+            return eFire = "Oak logs";
+        } else if (getSkills().getRealLevel(Skill.FIREMAKING) < 45) {
+            return eFire = "Willow logs";
+        } else if (getSkills().getRealLevel(Skill.FIREMAKING) < 60) {
+            return eFire = "Maple logs";
+ //       } else if (getSkills().getRealLevel(Skill.FIREMAKING) >= 99) {
+ //           return eFire = "Yew logs";
+        }
+		return eFire = "Maple logs";
+	}
+/*	
+	private boolean inTile() {
+		GameObject Fire = getGameObjects().closest("Fire");
+		Tile tile = new Tile(1,1);
+		
+		
+		
+		return Fire.getTile().equals(tile);
+	}
+*/	
+	/**
+	 * Takes a screenshot and writes the image as PNG to the dreambot folder
+	 * inside of a folder as the name of the script
+	 * The folder will be Dreambot/SCRIPT_NAME/ <-- not inside BotData folder
+	 */
+	public void ScreenShot() {
+		File file = new File(getManifest().name());
+		BufferedImage image = getClient().getCanvasImage();
+		try {
+			if (!file.exists() || !file.isDirectory()) {
+				log("Creating script folder");
+				file.mkdir();
+			}
+			log("Saving screenshot...");
+			ImageIO.write(image, "png",
+					new File(String.format("%s/%s.png", getManifest().name(), System.currentTimeMillis())));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	//On Loop	
+	@Override
+	public int onLoop() {
+		GameObject Fire = getGameObjects().closest("Fire");
+		Item Tinderbox = getInventory().get("Tinderbox");
+		GroundItem Log1 = getGroundItems().closest(Wood);
+		NPC banker = getNpcs().closest(npc -> npc != null && npc.hasAction("Bank"));
+    			
+		switch (getState()) {
+		case LANE1:
+			if (!getTabs().isOpen(Tab.INVENTORY)) {
+				getTabs().open(Tab.INVENTORY);
+			} else
+			if (FireLane1.contains(getLocalPlayer()) && getInventory().contains(eFire)) {
+				Status = "Burning Logs";
+				getInventory().get(eFire).interact("Use");
+				Tinderbox.interact("Use");
+				sleep(Calculations.random(1325, 1655));
+				while (getLocalPlayer().isAnimating())
+				sleepUntil(() -> !getLocalPlayer().isAnimating(), Calculations.random(1200, 1500));
+				Burned++;
+			}
+		break;
+
+		case LANE2:
+			if (!getTabs().isOpen(Tab.INVENTORY)) {
+				getTabs().open(Tab.INVENTORY);
+			} else
+			if (FireLane2.contains(getLocalPlayer()) && getInventory().contains(eFire)) {
+				Status = "Burning Logs";
+				getInventory().get(eFire).interact("Use");
+				Tinderbox.interact("Use");
+				sleep(Calculations.random(1325, 1655));
+				while (getLocalPlayer().isAnimating())
+				sleepUntil(() -> !getLocalPlayer().isAnimating(), Calculations.random(1200, 1500));
+				Burned++;
+			}
+		break;
+		
+		case LANE3:
+			if (!getTabs().isOpen(Tab.INVENTORY)) {
+				getTabs().open(Tab.INVENTORY);
+			} else
+			if (FireLane3.contains(getLocalPlayer()) && getInventory().contains(eFire)) {
+				Status = "Burning Logs";
+				getInventory().get(eFire).interact("Use");
+				Tinderbox.interact("Use");
+				sleep(Calculations.random(1325, 1655));
+				while (getLocalPlayer().isAnimating())
+				sleepUntil(() -> !getLocalPlayer().isAnimating(), Calculations.random(1200, 1500));
+				Burned++;
+			}
+		break;
+		
+		case LANE4:
+			if (!getTabs().isOpen(Tab.INVENTORY)) {
+				getTabs().open(Tab.INVENTORY);
+			} else
+			if (FireLane4.contains(getLocalPlayer()) && getInventory().contains(eFire)) {
+				Status = "Burning Logs";
+				getInventory().get(eFire).interact("Use");
+				Tinderbox.interact("Use");
+				sleep(Calculations.random(1325, 1655));
+				while (getLocalPlayer().isAnimating())
+				sleepUntil(() -> !getLocalPlayer().isAnimating(), Calculations.random(1200, 1500));
+				Burned++;
+			}
+		break;
+		
+		case LANE5:
+			if (!getTabs().isOpen(Tab.INVENTORY)) {
+				getTabs().open(Tab.INVENTORY);
+			} else
+			if (FireLane5.contains(getLocalPlayer()) && getInventory().contains(eFire)) {
+				Status = "Burning Logs";
+				getInventory().get(eFire).interact("Use");
+				Tinderbox.interact("Use");
+				sleep(Calculations.random(1325, 1655));
+				while (getLocalPlayer().isAnimating())
+				sleepUntil(() -> !getLocalPlayer().isAnimating(), Calculations.random(1200, 1500));
+				Burned++;
+			}
+		break;
+			
+		case COLLECT:
+			if (Log1.exists()) {
+				if(Log1 != null) {
+					getGroundItems().closest(eFire);
+					getGroundItems().closest(eFire).interact("Take");
+					sleepUntil(() -> !Log1.isOnScreen(),(Calculations.random(3000,5000)));
+				}
+			}
+		break;	
+			
+		case WALK:
+			if (!getInventory().contains(eFire)) {
+				if(!BankA.contains(getLocalPlayer())) {
+					Status = "Walking to Bank";
+					if(Bank1.distance() >4) {
+						getWalking().walk(BankA.getNearestTile(banker).getRandomizedTile(3));
+						sleepUntil(() -> Bank1.distance(getLocalPlayer()) >20 && !getLocalPlayer().isMoving(), (Calculations.random(4000,6000)));
+					}
+				}
+			} else
+			if (getInventory().isFull() && !FireA.contains(getLocalPlayer())) {
+				Status = "Walking To Fire Tile";
+				if (!Clicking.contains(getLocalPlayer())) {
+					getWalking().walk(Clicking.getCenter().getRandomizedTile(4));
+					sleepUntil(() -> Lane3.distance(getLocalPlayer()) >20, (Calculations.random(5000,8000)));
+					sleepUntil(() -> !getLocalPlayer().isMoving(), (Calculations.random(4000,8000)));				
+				}
+			} else
+			if (getLocalPlayer().distance(Fire)>0) {
+				getWalking().walk(Lane3.getRandomizedTile(4));
+				sleepUntil(() -> Lane3.distance(getLocalPlayer()) >10, (Calculations.random(5000,10000)));
+
+			}
+		break;
+			
+		case BANK:
+			if (BankA.contains(getLocalPlayer())) {
+				Progressor();
+				Run();
+				Status = "Withdrawing Logs";
+				if (banker != null) {
+	        		banker.interact("Bank");
+	        		sleep(1500);
+	        		sleepUntil(() -> getBank().isOpen(), (Calculations.random(2000,4000)));
+	        	}
+	        	if (getBank().isOpen()) {
+	        		if (getBank().contains(eFire)) {
+						getBank().withdraw(eFire, 28);
+		       			sleepUntil(() -> getInventory().isFull(),(Calculations.random(2000,4000)));
+		       		}
+		       	}
+			}
+		default:
+		break;
+		}
+		return 1;
+	}
+
+	//Paint
+	@Override
+	public void onPaint(Graphics g) {
+		XPGained = CurrentXP - StartXP;
+		Levels = CurrentLevel - StartLevel;
+		CurrentXP = getSkills().getExperience(Skill.FIREMAKING);
+		CurrentLevel = getSkills().getRealLevel(Skill.FIREMAKING);
+		
+		g.setColor(Color.BLACK);
+		g.drawString(Name + "  " + Version , 375, 365);
+
+		g.setColor(Color.WHITE);
+		g.drawString("Running for: " + timer.formatTime(), 370, 380);
+		g.drawString("Status: " + Status, 370, 395);
+		g.drawString("XP Gained: " + XPGained + " (" + timer.getHourlyRate(XPGained) + "/h)", 370, 410);
+		g.drawString("Logs Lit: " +  Burned  + " (" + timer.getHourlyRate(Burned) + "/h)", 370, 425);
+		g.drawString("Levels: " + Levels + "     " + "Hopped: " + Hopped, 370, 440);
+		g.drawString("Burning: " + eFire, 370, 455);
+		g.drawString("TTL: " + null, 370, 480);		
+	}
+
+	//Game Messages
+	@Override
+	public void onGameMessage(Message m) {
+		if (m.getMessage().toUpperCase().contains("The fire catches")) {
+			Burned++;
+		}
+		if (m.getMessage().toLowerCase().endsWith("here.")) {
+			Status = "Sleeping";
+			sleep(15000);
+		}
+		if (m.getMessage().endsWith("screen.")) {
+			Hopped++;
+			Status = "Hopping...";
+			int hopTo = f2pWorlds[Calculations.random(0,f2pWorlds.length-1)];
+			while(hopTo == getClient().getCurrentWorld())
+				hopTo = f2pWorlds[Calculations.random(0,f2pWorlds.length-1)];
+			getWorldHopper().hopWorld(hopTo);
+			sleep(Calculations.random(12000,19000));
+//			Reset();
+		} else {
+			try {
+				Thread.sleep(Calculations.random(12000,19000));
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+			hopWorlds = false;
+			sleep(Calculations.random(12000,19000));
+//			Reset();
+		}
+	}
+	
+//	private void Reset() {
+//		Status = "Setting Onloop";
+//		sleep(2000);
+//		getState();
+//	}
+	
+	@Override
+	public void onPlayerMessage(Message pp) {
+	}
+	@Override
+	public void onPrivateInMessage(Message arg0) {
+	}
+	@Override
+	public void onPrivateOutMessage(Message arg0) {
+	}
+	@Override
+	public void onTradeMessage(Message arg0) {
+	}
+}
